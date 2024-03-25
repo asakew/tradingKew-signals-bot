@@ -1,9 +1,14 @@
 package main
 
 import (
-	"log"
-
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"log"
+	"strings"
+
+	"io/ioutil"
+	"net/http"
+
+	"github.com/tidwall/gjson"
 )
 
 func main() {
@@ -19,13 +24,29 @@ func main() {
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 
-	updates := bot.GetUpdatesChan(u)
+	updates, err := bot.GetUpdatesChan(u)
 
 	for update := range updates {
-		if update.Message != nil { // If we got a message
-			log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
+		if update.Message == nil {
+			continue
+		}
 
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, update.Message.Text)
+		if strings.HasPrefix(update.Message.Text, "/price") {
+			coin := "bitcoin"
+			resp, err := http.Get("https://api.coingecko.com/api/v3/simple/price?ids=" + coin + "&vs_currencies=usd")
+			if err != nil {
+				log.Panic(err)
+			}
+			defer resp.Body.Close()
+
+			body, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				log.Panic(err)
+			}
+
+			price := gjson.GetBytes(body, coin+".usd").String()
+
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Current price of "+strings.Title(coin)+": $"+price)
 			msg.ReplyToMessageID = update.Message.MessageID
 
 			bot.Send(msg)
